@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>敵避けゲーム（黒敵落下版）</title>
+<style>
+body { margin: 0; background: #222; display: flex; flex-direction: column; align-items: center; }
+canvas { background: #fff; display: block; margin-top:10px;}
+.controls { display: grid; grid-template-columns: 60px 60px 60px; grid-template-rows: 60px 60px; gap: 5px; margin-top: 5px; }
+.btn { background: #444; color: #fff; font-size: 24px; border: none; border-radius: 10px; }
+.btn:active { background: #888; }
+#retry, #start { display: none; margin-top: 10px; padding: 10px 20px; font-size: 20px; border-radius: 10px; color: white; border: none; }
+#start { display: block; background: seagreen; }
+#retry { background: crimson; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="400" height="400"></canvas>
+
+<div class="controls">
+  <div></div>
+  <button class="btn" id="up">↑</button>
+  <div></div>
+  <button class="btn" id="left">←</button>
+  <button class="btn" id="down">↓</button>
+  <button class="btn" id="right">→</button>
+</div>
+
+<button id="start">スタート</button>
+<button id="retry">リトライ</button>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const CANVAS_W = 400;
+const CANVAS_H = 400;
+canvas.width = CANVAS_W;
+canvas.height = CANVAS_H;
+
+let charSize = 60;
+let x=150, y=340, vy=0, speed=5, gravity=0.5, jumpPower=-12;
+let enemies=[], blackEnemies=[], items=[], keys={}, gameOver=false, running=false, score=0;
+let lastSpawn=0, enemyInterval=1000, lastItemSpawn=0, itemInterval=5000;
+let lastBlackSpawn=0, blackEnemyInterval=8000;
+let highScore = localStorage.getItem("highScore") || 0;
+
+const character = new Image();
+character.src = "character.png";
+
+window.addEventListener("keydown", e=>keys[e.key]=true);
+window.addEventListener("keyup", e=>keys[e.key]=false);
+const btns={up:document.getElementById("up"), down:document.getElementById("down"), left:document.getElementById("left"), right:document.getElementById("right")};
+for(let dir in btns){btns[dir].addEventListener("touchstart",()=>keys[dir]=true); btns[dir].addEventListener("touchend",()=>keys[dir]=false);}
+
+function initGame(){
+  x=150; y=340; vy=0;
+  enemies=[]; blackEnemies=[]; items=[]; keys={};
+  gameOver=false; running=false; score=0;
+  lastSpawn=0; enemyInterval=1000; lastItemSpawn=0; itemInterval=5000; lastBlackSpawn=0; blackEnemyInterval=8000;
+  document.getElementById("retry").style.display="none";
+}
+
+function drawStartScreen(){
+  ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.fillStyle="black"; ctx.font="24px Arial"; ctx.fillText("敵避けゲーム",80,160);
+  ctx.font="18px Arial"; ctx.fillText("スタートボタンを押してね！",60,200);
+  ctx.fillText("最大で生きた秒数: "+highScore,60,230);
+}
+
+function spawnEnemy(){
+  const size = 20 + Math.random()*20;
+  const dir = Math.floor(Math.random()*3);
+  if(dir===0){
+    enemies.push({x:Math.random()*(CANVAS_W-size), y:-size, w:size, h:size, speedX:0, speedY:2+Math.random()*3});
+  } else if(dir===1){
+    const speedX = 2+Math.random()*2, speedY=2+Math.random()*2;
+    enemies.push({x:-size, y:Math.random()*(CANVAS_H-size), w:size, h:size, speedX:speedX, speedY:speedY});
+  } else {
+    const speedX = -(2+Math.random()*2), speedY=2+Math.random()*2;
+    enemies.push({x:CANVAS_W, y:Math.random()*(CANVAS_H-size), w:size, h:size, speedX:speedX, speedY:speedY});
+  }
+}
+
+function spawnBlackEnemy(){
+  const count = 1+Math.floor(Math.random()*2);
+  for(let i=0;i<count;i++){
+    const size = 20 + Math.random()*20;
+    const bx = Math.random()*(CANVAS_W-size), by = -size;
+    const speedY = 2 + Math.random()*2;
+    blackEnemies.push({x:bx, y:by, w:size, h:size, speedY:speedY});
+  }
+}
+
+function spawnItem(){
+  const size = 20;
+  const ix = Math.random()*(CANVAS_W-size), iy = Math.random()*(CANVAS_H-size);
+  items.push({x:ix,y:iy,size:size});
+}
+
+function update(delta){
+  if(!running||gameOver) return;
+  if((keys["ArrowLeft"]||keys["left"]) && x>0) x-=speed;
+  if((keys["ArrowRight"]||keys["right"]) && x<CANVAS_W-charSize) x+=speed;
+  if((keys["ArrowUp"]||keys["up"]) && y>=CANVAS_H-charSize) vy=jumpPower;
+
+  vy+=gravity; y+=vy; if(y>CANVAS_H-charSize){ y=CANVAS_H-charSize; vy=0;}
+
+  enemies.forEach(e=>{
+    e.x+=e.speedX; e.y+=e.speedY;
+    if(e.x+e.w<0 || e.x>CANVAS_W || e.y>CANVAS_H) enemies.splice(enemies.indexOf(e),1);
+    if(x<e.x+e.w && x+charSize>e.x && y<e.y+e.h && y+charSize>e.y){ gameOver=true; running=false; document.getElementById("retry").style.display="block"; updateHighScore();}
+  });
+
+  for(let i=blackEnemies.length-1;i>=0;i--){
+    const b=blackEnemies[i];
+    b.y+=b.speedY;
+    if(b.y>CANVAS_H){ gameOver=true; running=false; document.getElementById("retry").style.display="block"; updateHighScore();}
+    if(x<b.x+b.w && x+charSize>b.x && y<b.y+b.h && y+charSize>b.y){ blackEnemies.splice(i,1);}
+  }
+
+  for(let i=items.length-1;i>=0;i--){
+    const it=items[i];
+    if(x<it.x+it.size && x+charSize>it.x && y<it.y+it.size && y+charSize>it.y){ score+=5; items.splice(i,1);}
+  }
+
+  score += delta/1000;
+  lastSpawn += delta; if(lastSpawn>enemyInterval){ spawnEnemy(); lastSpawn=0; enemyInterval=Math.max(300,enemyInterval-5);}
+  lastItemSpawn += delta; if(lastItemSpawn>itemInterval){ spawnItem(); lastItemSpawn=0;}
+  lastBlackSpawn+=delta;
+  let interval=blackEnemyInterval; if(score>=30) interval=Math.max(800,blackEnemyInterval-(score-30)*20); if(score>=50) interval=Math.max(500,interval);
+  if(lastBlackSpawn>interval){ spawnBlackEnemy(); lastBlackSpawn=0;}
+}
+
+function draw(){
+  ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+  if(!running&&!gameOver){ 
+    ctx.fillStyle="black"; ctx.font="24px Arial"; ctx.fillText("敵避けゲーム",80,160);
+    ctx.font="18px Arial"; ctx.fillText("スタートボタンを押してね！",60,200);
+    ctx.fillText("最大で生きた秒数: "+highScore,60,230);
+    return;
+  }
+  ctx.drawImage(character,x,y,charSize,charSize);
+  ctx.fillStyle="red"; enemies.forEach(e=>ctx.fillRect(e.x,e.y,e.w,e.h));
+  ctx.fillStyle="black"; blackEnemies.forEach(b=>ctx.fillRect(b.x,b.y,b.w,b.h));
+  ctx.fillStyle="gold"; items.forEach(it=>ctx.fillRect(it.x,it.y,it.size,it.size));
+  ctx.strokeStyle="black"; ctx.lineWidth=3; ctx.strokeRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.fillStyle="black"; ctx.font="18px Arial";
+  ctx.fillText("生きた秒数: "+Math.floor(score),10,20);
+  ctx.fillText("最大で生きた秒数: "+highScore,10,40);
+  if(gameOver){
+    ctx.fillStyle="black"; ctx.font="24px Arial";
+    ctx.fillText("しんでしまった！",100,180);
+    ctx.fillText("生きた秒数: "+Math.floor(score),100,210);
+    ctx.fillText("最大で生きた秒数: "+highScore,100,240);
+  }
+}
+
+function updateHighScore(){ if(score>highScore){ highScore=Math.floor(score); localStorage.setItem("highScore",highScore);} }
+
+let lastTime=performance.now();
+function loop(now=performance.now()){
+  const delta=now-lastTime; lastTime=now;
+  update(delta); draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById("start").addEventListener("click",()=>{ initGame(); running=true; document.getElementById("start").style.display="none";});
+document.getElementById("retry").addEventListener("click",()=>{ initGame(); running=true; });
+
+loop();
+</script>
+</body>
+</html>
